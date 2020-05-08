@@ -216,11 +216,12 @@ class NodeDistribute {
     }
 
     _weightedVote(value) {
-        let weight = '1'
+        let weight = 1
         if (this.node.plan.options) {
-            let temp = '0';
+            let temp = 0
+            let naxValue = new BigNumber(value).div(naxUnit)
             for(let key in this.node.plan.options) {
-                if(new BigNumber(value).div(naxUnit).gt(temp)) {
+                if(naxValue.gte(key) && new BigNumber(key).gt(temp)) {
                     temp = key
                     weight = this.node.plan.options[key]
                 }
@@ -245,6 +246,10 @@ class NodeDistribute {
 
     distribute() {
         this.checkManagers()
+
+        this.votes.set(20994, {"count":120,"timestamp":1588510965,"votes":[{"address":"n1Zf8SCheBEw3Xfbv4KQDHS8Tx8ZXBm1zCC","value":"548000000000000"},{"address":"n1Zdno2bn1KFsnbxYzx4RgbaBZmHhATt2Ps","value":"148504000000000"},{"address":"n1NZwgrEqoFXbTa2FAvtV6aZC5jNZrNEKsJ","value":"22000000000000"},{"address":"n1Q9ehAmTcrNGDxSRnSsHojkASwgkcFj17T","value":"16000000000000"},{"address":"n1b3XPKJ1KzSDaHfzAbojvkXoyXNLRfDeum","value":"1887000000000000"},{"address":"n1RNJsU3iVxyvB3ZWh5Ydebuy4pqnrJmpuw","value":"500000000000000"}]})
+        this.votes.set(21022, {"count":220,"timestamp":1588597995,"votes":[{"address":"n1Zf8SCheBEw3Xfbv4KQDHS8Tx8ZXBm1zCC","value":"619377000000000"},{"address":"n1Zdno2bn1KFsnbxYzx4RgbaBZmHhATt2Ps","value":"148504000000000"},{"address":"n1NZwgrEqoFXbTa2FAvtV6aZC5jNZrNEKsJ","value":"22000000000000"},{"address":"n1Q9ehAmTcrNGDxSRnSsHojkASwgkcFj17T","value":"120000000000000"},{"address":"n1b3XPKJ1KzSDaHfzAbojvkXoyXNLRfDeum","value":"1887000000000000"},{"address":"n1RNJsU3iVxyvB3ZWh5Ydebuy4pqnrJmpuw","value":"500000000000000"},{"address":"n1RgRaiR2T6xp58DZMqdTvfMArYrrYondTh","value":"20000000000000"},{"address":"n1aofKorsM15cxMWds3vRkW9ZxpBZv5Bqow","value":"12000000000000"}]})
+
 
         let voteSize = this.votes.size()
         if (voteSize <= 1) {
@@ -272,7 +277,7 @@ class NodeDistribute {
         let temp = last
         let keys = this.votes.keys()
         let cache = {}
-        cache[temp] = this.votes.get(temp)
+        cache[temp] = lastData
         keys.forEach(period => {
             if (period > temp) {
                 let data = this.votes.get(period)
@@ -299,12 +304,14 @@ class NodeDistribute {
                 let distributeAmount = new BigNumber(NASPerBlock).times(count).times(this.node.plan.rate)
                 data.votes.forEach(vote => {
                     if (vote.lastFound) {
-                        let amount = new BigNumber(vote.weightedVote).times(distributeAmount).div(total).toFixed(5)
+                        let amount = new BigNumber(vote.weightedVote).times(distributeAmount).div(total)
+                        amount = amount.times(100).floor().div(100).toString(10)
                         let income = {
                             start: temp,
                             end: period,
                             distributeTimestamp: Blockchain.block.timestamp,
                             vote: new BigNumber(vote.value).div(naxUnit).toString(10),
+                            weightedVote: vote.weightedVote,
                             blockCount: count,
                             value: amount,
                             transfered: false
@@ -349,11 +356,16 @@ class NodeDistribute {
     transferAddressReward(period, addr) {
         let income = this.getAddressIncome(period, addr)
         if (income == null) {
-            throw new Error('this period not distribute.')
+            return
         }
         if (income.transfered) {
             throw new Error(`${addr} has transfered in ${period}.`)
         }
+
+
+        income.transfered = true
+        income.transferTimestamp = Blockchain.block.timestamp
+
         if (new BigNumber(income.value).gt(0)) {
             let value = new BigNumber(income.value).times(nasUnit)
             Utils.transferNAS(addr, value)
@@ -364,10 +376,10 @@ class NodeDistribute {
             }
             balance = new BigNumber(balance).sub(value)
             this.storage.set(this.balanceKey, balance.toString(10))
+
+            Event.Trigger("transferAddressReward", income)
         }
 
-        income.transfered = true
-        income.transferTimestamp = Blockchain.block.timestamp
         this.storage.set(this._incomeKey(period, addr), income)
     }
 
@@ -377,7 +389,7 @@ class NodeDistribute {
         let charge = {
             index: count,
             from: from,
-            value: value,
+            value: new BigNumber(value).toString(10),
             timestamp: Blockchain.block.timestamp
         }
         this.storage.set(this._chargeHistoryKey(count), charge)
@@ -399,7 +411,8 @@ class NodeDistribute {
         }
 
         Utils.transferNAS(addr, value)
-        this.storage.set(this.balanceKey, balance.sub(value).toString(10))
+        balance = new BigNumber(balance).sub(value).toString(10)
+        this.storage.set(this.balanceKey, balance)
 
         Event.Trigger("withdraw", {
             from: Blockchain.transaction.to,
@@ -428,8 +441,10 @@ class NodeDistribute {
         let incomes = []
         addrs.forEach(addr => {
             let income = this.getAddressIncome(period, addr)
-            income.address = addr
-            incomes.push(income)
+            if (income) {
+                income.address = addr
+                incomes.push(income)
+            }
         })
         return incomes
     }
@@ -439,7 +454,9 @@ class NodeDistribute {
     }
 
     getBalance() {
-        return this.storage.get(this.balanceKey)
+        let balance = this.storage.get(this.balanceKey)
+        balance = balance ? balance : "0"
+        return balance
     }
 
     getChargeHistory() {
@@ -572,7 +589,6 @@ class Distribute extends BaseContract {
     }
 
     distribute(nodeId) {
-        this.track(nodeId)
         return this._node(nodeId).distribute()
     }
 
@@ -627,14 +643,9 @@ class Distribute extends BaseContract {
             throw new Error('node has registered.')
         }
 
-        let node = this.nodeContract.call('getNodeDetail', nodeId)
-        if (node.accounts.registrant != Blockchain.transaction.from) {
-            throw new Error('Only the node registration address can be registered.')
-        }
 
         this._nodes.set(nodeId, {managers: managers, plan: plan})
 
-        this._track(node)
     }
 
     update(nodeId, managers, plan) {
