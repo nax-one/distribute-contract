@@ -247,10 +247,6 @@ class NodeDistribute {
     distribute() {
         this.checkManagers()
 
-        this.votes.set(20994, {"count":120,"timestamp":1588510965,"votes":[{"address":"n1Zf8SCheBEw3Xfbv4KQDHS8Tx8ZXBm1zCC","value":"548000000000000"},{"address":"n1Zdno2bn1KFsnbxYzx4RgbaBZmHhATt2Ps","value":"148504000000000"},{"address":"n1NZwgrEqoFXbTa2FAvtV6aZC5jNZrNEKsJ","value":"22000000000000"},{"address":"n1Q9ehAmTcrNGDxSRnSsHojkASwgkcFj17T","value":"16000000000000"},{"address":"n1b3XPKJ1KzSDaHfzAbojvkXoyXNLRfDeum","value":"1887000000000000"},{"address":"n1RNJsU3iVxyvB3ZWh5Ydebuy4pqnrJmpuw","value":"500000000000000"}]})
-        this.votes.set(21022, {"count":220,"timestamp":1588597995,"votes":[{"address":"n1Zf8SCheBEw3Xfbv4KQDHS8Tx8ZXBm1zCC","value":"619377000000000"},{"address":"n1Zdno2bn1KFsnbxYzx4RgbaBZmHhATt2Ps","value":"148504000000000"},{"address":"n1NZwgrEqoFXbTa2FAvtV6aZC5jNZrNEKsJ","value":"22000000000000"},{"address":"n1Q9ehAmTcrNGDxSRnSsHojkASwgkcFj17T","value":"120000000000000"},{"address":"n1b3XPKJ1KzSDaHfzAbojvkXoyXNLRfDeum","value":"1887000000000000"},{"address":"n1RNJsU3iVxyvB3ZWh5Ydebuy4pqnrJmpuw","value":"500000000000000"},{"address":"n1RgRaiR2T6xp58DZMqdTvfMArYrrYondTh","value":"20000000000000"},{"address":"n1aofKorsM15cxMWds3vRkW9ZxpBZv5Bqow","value":"12000000000000"}]})
-
-
         let voteSize = this.votes.size()
         if (voteSize <= 1) {
             throw new Error('distribute must after the track votes.')
@@ -589,6 +585,7 @@ class Distribute extends BaseContract {
     }
 
     distribute(nodeId) {
+        this.track(nodeId)
         return this._node(nodeId).distribute()
     }
 
@@ -643,9 +640,14 @@ class Distribute extends BaseContract {
             throw new Error('node has registered.')
         }
 
+        let node = this.nodeContract.call('getNodeDetail', nodeId)
+        if (node.accounts.registrant != Blockchain.transaction.from) {
+            throw new Error('Only the node registration address can be registered.')
+        }
 
         this._nodes.set(nodeId, {managers: managers, plan: plan})
 
+        this._track(node)
     }
 
     update(nodeId, managers, plan) {
